@@ -6,8 +6,16 @@ import os # need to create a directory
 import uuid
 
 cap = cv2.VideoCapture(0)
-cap.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, 800)
-cap.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, 600)
+w = cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)
+h = cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)
+print "Original resolution: (%dx%d)"%(w, h)
+r = 800/w
+w = int(r*w)
+h = int(r*h)
+print "Using resolution: (%dx%d)"%(w, h)
+
+cap.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, w)
+cap.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, h)
 
 def getUniqueName():
 	return str(uuid.uuid1())
@@ -22,6 +30,9 @@ def camProcessor(directory):
 
 		# Display the resulting frame
 		cv2.imshow('frame',cv2.flip(gray, 1) )
+		#size = 200, 200, 3
+		#m = np.zeros(size, dtype=np.uint8)
+		#cv2.imshow('frame', m )
 		ch = cv2.waitKey(1) & 0xFF
 		if ch == ord('q') or ch == 27:
 			break

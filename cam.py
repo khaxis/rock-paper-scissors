@@ -6,8 +6,16 @@ import os # need to create a directory
 import uuid
 
 cap = cv2.VideoCapture(0)
-cap.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, 800)
-cap.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, 600)
+w = cap.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)
+h = cap.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)
+print "Original resolution: (%dx%d)"%(w, h)
+r = 800/w
+w = int(r*w)
+h = int(r*h)
+print "Using resolution: (%dx%d)"%(w, h)
+
+cap.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, w)
+cap.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, h)
 
 def getUniqueName():
 	return str(uuid.uuid1())
@@ -16,6 +24,7 @@ def camProcessor():
 	while(True):
 		# Capture frame-by-frame
 		ret, frame = cap.read()
+		frame = cv2.flip(frame, 1)
 
 		# Display the resulting frame
 		# define range of blue color in HSV
@@ -28,7 +37,7 @@ def camProcessor():
 		
 		res = np.concatenate((hsv, ttt), axis=1)
 		
-		cv2.imshow('frame',cv2.flip(res, 1) )
+		cv2.imshow('frame', res )
 		ch = cv2.waitKey(1) & 0xFF
 		if ch == ord('q') or ch == 27:
 			break
