@@ -1,6 +1,7 @@
 import sys
 import random
 from sklearn import svm
+import os
 
 
 def getHelp(argv):
@@ -10,17 +11,16 @@ def getHelp(argv):
 
 def readClasses(filenames):
 	classes = dict()
-	index = 0
 	for filename in filenames:
-		classes[index] = []
+		key = os.path.split(filename)[1]
+		classes[key] = []
 		with open(filename) as f:
 			for line in f:
 				lineData = [ float(s) for s in line.rstrip('\n').split() ]
 				if len(lineData)>1:
-					classes[index].append(lineData)
+					classes[key].append(lineData)
 		
-		random.shuffle(classes[index])	# shuffle for fun
-		index = index + 1
+		random.shuffle(classes[key])	# shuffle for fun
 	
 	return classes
 
@@ -74,6 +74,9 @@ def trainOneVsOne(classes):
 	testLabels = []
 	testN = dict()
 	testSuccess = dict()
+
+	minValues = []	# needed for normalization
+	maxValues = []	# needed for normalization
 	
 	for key in keys:
 		s = classes[key]
@@ -86,7 +89,26 @@ def trainOneVsOne(classes):
 		testN[key] = len(t)
 		testSuccess[key] = 0
 
-	clf = svm.SVC()
+	dim = len(data[0])
+	minValues = [ min( d[i] for d in data ) for i in range(dim) ]
+	maxValues = [ max( d[i] for d in data ) for i in range(dim) ]
+
+	for i in range(len(data)):
+		for j in range(dim):
+			if minValues[j] == maxValues[j]:
+				continue
+			data[i][j] = (data[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
+
+	for i in range(len(tests)):
+		for j in range(dim):
+			if minValues[j] == maxValues[j]:
+				continue
+			tests[i][j] = (tests[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
+
+	print minValues
+	print maxValues
+
+	clf = svm.SVC(kernel='rbf', gamma = 1.5, C=400)
 	clf.fit(data, dataLabels)
 	
 	#for i in range(len(keys)):
@@ -101,14 +123,24 @@ def trainOneVsOne(classes):
 		test = tests[i]
 		expected = testLabels[i]
 		res = clf.predict(test)
-		print expected, res[0]
+		print  '%s\t%s'%(str(expected), str(res[0]))
 		s = (1 if expected == res[0] else 0)
 		successful = successful + s
 		testSuccess[expected] = testSuccess[expected] + s
-		
+	
+
 	print "---"
+	print clf
+	print "---"
+	print "dim: %d"%dim
+	print "---"
+	totalRatios = []
 	for key in keys:
 		print "[%s]: %f"%(key, float(testSuccess[key]) / testN[key] )
+		totalRatios.append(float(testSuccess[key]) / testN[key] );
+	print '---'
+	print "min rate: ", min(r for r in totalRatios)
+	print "avg rate: ", sum(r for r in totalRatios) / len(totalRatios)
 	print "---"
 	print successful,N
 	print float(successful)/N
