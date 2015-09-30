@@ -108,7 +108,7 @@ def trainOneVsOne(classes):
 	print minValues
 	print maxValues
 
-	clf = svm.SVC(kernel='rbf', gamma = 1.5, C=400)
+	clf = svm.SVC(kernel='rbf', gamma = 0.01*1.5, C=400)
 	clf.fit(data, dataLabels)
 	
 	#for i in range(len(keys)):
