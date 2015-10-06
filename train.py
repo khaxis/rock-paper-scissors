@@ -2,7 +2,11 @@ import sys
 import random
 from sklearn import svm
 import os
+from sklearn.externals import joblib
+import shutil
+import pickle
 
+OUTPUT_DIR = 'output'
 
 def getHelp(argv):
 	res = ""
@@ -65,27 +69,74 @@ def trainOneVsOne2(classes):
 	return
 
 
+def performTests(clf, data, labels):
+	if len(data) != len(labels):
+		raise "sizes of data and labels do not match"
+
+	N = len(labels)
+	keys = set()
+	for label in labels:
+		keys.add(label)
+	keys = [k for k in keys]
+
+	sizes = dict()
+	successes = dict()
+	for key in keys:
+		sizes[key] = sum( 1 for label in labels if label == key)
+		successes[key] = 0
+
+	
+	for i in range(N):
+		sample = data[i]
+		expected = labels[i]
+		res = clf.predict(sample)
+		s = (1 if expected == res[0] else 0)
+		#print "%s\t%s"%(expected, res[0])
+		successes[expected] = successes[expected] + s
+
+	totalRate = float( sum(successes[key] for key in keys ) ) / N
+	rateByClass = dict()
+
+	for key in keys:
+		rateByClass[key] = float(successes[key]) / sizes[key]
+
+	return totalRate, rateByClass
+
+
 def trainOneVsOne(classes):
 	keys = classes.keys()
-	trainingRate = 0.8
+	trainingRate = 0.6
+	validationRate = 0.2
 	data = []
 	tests = []
+	validations = []
 	dataLabels = []
+	validationLabels = []
 	testLabels = []
 	testN = dict()
 	testSuccess = dict()
+	validationN = dict()
+	validationSuccess = dict()
 
 	minValues = []	# needed for normalization
 	maxValues = []	# needed for normalization
 	
 	for key in keys:
 		s = classes[key]
-		d = s[:int(trainingRate*len(s))]
-		t = s[int(trainingRate*len(s)):]
+		d = s[:int(trainingRate*len(s))]	# first [0, trainingRate] samples
+		v = s[int(trainingRate*len(s)):int((trainingRate+validationRate)*len(s))]	# first [trainingRate, trainingRate+validationRate]
+		t = s[int((trainingRate+validationRate)*len(s)):]
+
 		data = data + d
+		validations = validations + v
 		tests = tests + t
+
 		dataLabels = dataLabels + [key]*len(d)
+		validationLabels = validationLabels + [key]*len(v)
 		testLabels = testLabels + [key]*len(t)
+
+		validationN[key] = len(v)
+		validationSuccess[key] = 0
 		testN[key] = len(t)
 		testSuccess[key] = 0
 
@@ -99,35 +150,54 @@ def trainOneVsOne(classes):
 				continue
 			data[i][j] = (data[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
 
+	for i in range(len(validations)):
+		for j in range(dim):
+			if minValues[j] == maxValues[j]:
+				continue
+			validations[i][j] = (validations[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
+
 	for i in range(len(tests)):
 		for j in range(dim):
 			if minValues[j] == maxValues[j]:
 				continue
 			tests[i][j] = (tests[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
 
-	print minValues
-	print maxValues
+	#print minValues
+	#print maxValues
 
-	clf = svm.SVC(kernel='rbf', gamma = 0.01*1.5, C=400)
-	clf.fit(data, dataLabels)
+	#########################################
+	# Iterate through model's parameters
+	#########################################
+
+	for t in range(1, 150, 1):
+		c = t*4
+		#
+		# Train model
+		#
+		clf = svm.SVC(kernel='rbf', gamma = 0.00*1.5, C=c)
+		clf.fit(data, dataLabels)
+	 
+		# 
+		# Perform testing
+		#
+		
+		totalRate, rateByClass = performTests(clf, tests, testLabels)
+		meanRate = sum( rateByClass[key] for key in rateByClass ) / len(rateByClass)
+
+		print "%f\t%f\t%f"%(c, meanRate, totalRate)
+
+	exit(1)
 	
-	#for i in range(len(keys)):
-	#	for j in range(i+1, len(keys)):
-	#		A, B = keys[i], keys[j]
-	#		oneVsOne(classes[A], classes[B])
-	
-	successful = 0
-	N = len(tests)
-	
-	for i in range(N):
-		test = tests[i]
-		expected = testLabels[i]
-		res = clf.predict(test)
-		print  '%s\t%s'%(str(expected), str(res[0]))
-		s = (1 if expected == res[0] else 0)
-		successful = successful + s
-		testSuccess[expected] = testSuccess[expected] + s
-	
+	#
+	# 
+	# save to filename.pkl'
+	#
+
+	shutil.rmtree(OUTPUT_DIR)
+	os.mkdir(OUTPUT_DIR)
+	joblib.dump(clf, OUTPUT_DIR+'/svm.pkl')
+	with open(OUTPUT_DIR+'/normalization', 'w') as f:
+		pickle.dump([minValues, maxValues], f)
 
 	print "---"
 	print clf
