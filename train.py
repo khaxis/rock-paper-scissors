@@ -5,6 +5,7 @@ import os
 from sklearn.externals import joblib
 import shutil
 import pickle
+from multiprocessing import Pool
 
 OUTPUT_DIR = 'output'
 
@@ -102,89 +103,139 @@ def performTests(clf, data, labels):
 
 	return totalRate, rateByClass
 
+def parallelTrain(x):
+	i = x[0]
+	gamma = x[1]
+	c = x[2]
+	bulkData = x[3]
+	bulkLabels = x[4]
+	validationData = x[5]
+	validationLabels = x[6]
+	#
+	# Train model
+	#
+	clf = svm.SVC(kernel='rbf', gamma=gamma, C=c)
+	clf.fit(bulkData[i], bulkLabels[i])
+	# 
+	# Perform testing
+	#
+	
+	totalRate, rateByClass = performTests(clf, validationData[i], validationLabels[i])
+	meanRate = sum( rateByClass[key] for key in rateByClass ) / len(rateByClass)
+	return meanRate, totalRate
 
 def trainOneVsOne(classes):
 	keys = classes.keys()
-	trainingRate = 0.6
-	validationRate = 0.2
+	crossPacN = 5
+	trainingRate = 0.8
 	data = []
-	tests = []
-	validations = []
 	dataLabels = []
-	validationLabels = []
-	testLabels = []
-	testN = dict()
-	testSuccess = dict()
-	validationN = dict()
-	validationSuccess = dict()
-
+	
 	minValues = []	# needed for normalization
 	maxValues = []	# needed for normalization
 	
 	for key in keys:
-		s = classes[key]
-		d = s[:int(trainingRate*len(s))]	# first [0, trainingRate] samples
-		v = s[int(trainingRate*len(s)):int((trainingRate+validationRate)*len(s))]	# first [trainingRate, trainingRate+validationRate]
-		t = s[int((trainingRate+validationRate)*len(s)):]
-
+		d = classes[key]
 		data = data + d
-		validations = validations + v
-		tests = tests + t
-
 		dataLabels = dataLabels + [key]*len(d)
-		validationLabels = validationLabels + [key]*len(v)
-		testLabels = testLabels + [key]*len(t)
-
-		validationN[key] = len(v)
-		validationSuccess[key] = 0
-		testN[key] = len(t)
-		testSuccess[key] = 0
 
 	dim = len(data[0])
 	minValues = [ min( d[i] for d in data ) for i in range(dim) ]
 	maxValues = [ max( d[i] for d in data ) for i in range(dim) ]
-
+	
+	#
+	# shuffle data
+	#
+	data_shuf = []
+	dataLabels_shuf = []
+	index_shuf = range(len(data))
+	random.shuffle(index_shuf)
+	for i in index_shuf:
+		data_shuf.append(data[i])
+		dataLabels_shuf.append(dataLabels[i])
+	data = data_shuf
+	dataLabels = dataLabels_shuf
+	
+	# normalize data
 	for i in range(len(data)):
 		for j in range(dim):
 			if minValues[j] == maxValues[j]:
 				continue
 			data[i][j] = (data[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
 
-	for i in range(len(validations)):
-		for j in range(dim):
-			if minValues[j] == maxValues[j]:
-				continue
-			validations[i][j] = (validations[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
-
-	for i in range(len(tests)):
-		for j in range(dim):
-			if minValues[j] == maxValues[j]:
-				continue
-			tests[i][j] = (tests[i][j] - minValues[j]) / (maxValues[j] - minValues[j])
-
 	#print minValues
 	#print maxValues
+
+	# divide data by bulks for cross validation
+	bulkData = dict()
+	bulkLabels = dict()
+	validationData = dict()
+	validationLabels = dict()
+	for i in range(crossPacN):
+		r0 = float(i)/crossPacN
+		r1 = float(i+1)/crossPacN
+		validationData[i] = data[ int(r0*len(data)) : int(r1*len(data)) ]
+		validationLabels[i] = dataLabels[ int(r0*len(data)) : int(r1*len(data)) ]
+		bulkData[i] = data[ : int(r0*len(data)) ] + data[ int(r1*len(data)) : ]
+		bulkLabels[i] = dataLabels[ : int(r0*len(data))] + dataLabels[ int(r1*len(data)) : ]
 
 	#########################################
 	# Iterate through model's parameters
 	#########################################
 
-	for t in range(1, 150, 1):
-		c = t*4
-		#
-		# Train model
-		#
-		clf = svm.SVC(kernel='rbf', gamma = 0.00*1.5, C=c)
-		clf.fit(data, dataLabels)
-	 
-		# 
-		# Perform testing
-		#
-		
-		totalRate, rateByClass = performTests(clf, tests, testLabels)
-		meanRate = sum( rateByClass[key] for key in rateByClass ) / len(rateByClass)
-
-		print "%f\t%f\t%f"%(c, meanRate, totalRate)
+	for u in range(2, 8):
+		for v in range(1, 12):
+			c = 0.5 * (2**u)
+			t = v/10.0
+			t = -2*(1-t) + 0*t
+			gamma = 3.0**t
+			#print "%f\t%f"%(c, gamma)
+			#continue
+			
+			# perform cross validation
+			mr = []
+			tr = []
+			multithread = False
+			if multithread:
+				pool = Pool()
+				args = []
+				for i in range(crossPacN):
+					t = []
+					t.append(i)
+					t.append(gamma)
+					t.append(c)
+					t.append(bulkData)
+					t.append(bulkLabels)
+					t.append(validationData)
+					t.append(validationLabels)
+					args.append(t)
+				
+				results = pool.map(parallelTrain, args)
+				
+				for r in results:
+					mr.append(r[0])
+					tr.append(r[1])
+			else:
+				for i in range(crossPacN):
+					#
+					# Train model
+					#
+					clf = svm.SVC(kernel='rbf', gamma=gamma, C=c)
+					clf.fit(bulkData[i], bulkLabels[i])
+					# 
+					# Perform testing
+					#
+					
+					totalRate, rateByClass = performTests(clf, validationData[i], validationLabels[i])
+					meanRate = sum( rateByClass[key] for key in rateByClass ) / len(rateByClass)
+					mr.append(meanRate)
+					tr.append(totalRate)
+			
+			# consalidate results
+			meanRate = sum( x for x in mr ) / len(mr)
+			totalRate = sum (x for x in tr ) / len(tr)
+			print "%f\t%f\t%f\t%f"%(c, gamma, meanRate, totalRate)
+			sys.stdout.flush()
 
 	exit(1)
 	
