@@ -184,10 +184,10 @@ def trainOneVsOne(classes):
 	#########################################
 
 	for u in range(2, 8):
-		for v in range(1, 12):
+		for v in range(0, 25):
 			c = 0.5 * (2**u)
-			t = v/10.0
-			t = -2*(1-t) + 0*t
+			t = v/24.0
+			t = -2*(1-t) + 2*t
 			gamma = 3.0**t
 			#print "%f\t%f"%(c, gamma)
 			#continue
